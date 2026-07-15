@@ -1,0 +1,23 @@
+# ── Large data files (exceed GitHub 100MB limit) ──
+*.rds
+*.RData
+.RDataTmp
+.Rhistory
+
+# ── Raw downloaded data folders ──
+GDCdata/
+GSE132465/
+MANIFEST
+
+# ── Temporary R files ──
+*.tmp
+*.log
+*_cache/
+*_files/
+
+# ── System files ──
+.DS_Store
+Thumbs.db
+
+# ── HTML outputs (generated from Rmd) ──
+*.html
