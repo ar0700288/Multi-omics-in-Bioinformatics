@@ -51,6 +51,11 @@ Raw data comes from GDC via TCGAbiolinks: RNA-seq (STAR counts), methylation
 TCGA-COAD + TCGA-READ. Only needs to run once, so these chunks are switched
 off (`eval=FALSE`) - flip to TRUE for a first run.
 
+Data download: none of this is stored in the repo (too large for GitHub) -
+the chunks below pull it programmatically from the GDC Data Portal:
+[TCGA-COAD](https://portal.gdc.cancer.gov/projects/TCGA-COAD),
+[TCGA-READ](https://portal.gdc.cancer.gov/projects/TCGA-READ).
+
 ```{r download-rna, eval=FALSE}
 # raw STAR counts, not TPM - DESeq2 needs integer counts
 query_rna <- GDCquery(

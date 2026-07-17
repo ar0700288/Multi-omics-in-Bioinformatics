@@ -12,10 +12,17 @@ output:
 
 External validation of the Factor 6 & 12 top genes (from
 02_mofa_integration.Rmd) against an independent single-cell CRC dataset
-(GSE132465). The Cox model in 04_survival_analysis.Rmd was trained on bulk
-RNA-seq, which averages over every cell in a tumor sample - checking the
-same genes in single-cell data tells us whether they're actually driven by
-a specific cell type, rather than being a bulk-only artifact.
+(GSE132465, Lee et al. 2020). The Cox model in 04_survival_analysis.Rmd
+was trained on bulk RNA-seq, which averages over every cell in a tumor
+sample - checking the same genes in single-cell data tells us whether
+they're actually driven by a specific cell type, rather than being a
+bulk-only artifact.
+
+Data download: the cell annotation and expression matrix files used below
+are not included in this repo (too large for GitHub) - download them from
+NCBI GEO accession GSE132465:
+<https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE132465>, and place
+them in `data/GSE132465/`.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)

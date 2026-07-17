@@ -28,8 +28,18 @@ Sub-Questions:
 | Clinical | TCGA GDC | 633 | survival time, vital status, stage, age |
 
 386 patients have complete data across all three layers after QC and
-alignment. Raw data comes from GDC via `TCGAbiolinks` and isn't stored in
-the repo - see Reproducing below.
+alignment. None of the raw data is stored in this repo (too large for
+GitHub) - it's pulled from these public sources instead:
+
+- TCGA-COAD / TCGA-READ (RNA-seq, methylation, mutations, clinical):
+  [GDC Data Portal](https://portal.gdc.cancer.gov/projects/TCGA-COAD),
+  [TCGA-READ](https://portal.gdc.cancer.gov/projects/TCGA-READ) - downloaded
+  programmatically via `TCGAbiolinks` in `01_QC_EDA.Rmd` (see Reproducing
+  below).
+- GSE132465 (independent scRNA-seq validation cohort, Lee et al. 2020):
+  [NCBI GEO accession GSE132465](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE132465) -
+  download the cell annotation and expression matrix files from there and
+  place them in `data/GSE132465/` before running `03_external_scrna_validate.Rmd`.
 
 ## Pipeline
 
