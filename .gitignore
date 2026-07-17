@@ -4,6 +4,14 @@
 .RDataTmp
 .Rhistory
 
+# small, standalone-useful artifacts other notebooks depend on directly -
+# keep these even though they're .rds (each lets you skip an expensive step)
+!data/mofa_model.rds
+!data/cox_fit.rds
+!data/sc_small.rds
+!data/clin_final.rds
+!data/clinical.rds
+
 # ── Raw downloaded data folders ──
 GDCdata/
 GSE132465/
