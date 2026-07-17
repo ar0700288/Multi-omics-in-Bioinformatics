@@ -62,10 +62,10 @@ GitHub) - it's pulled from these public sources instead:
 
 ## Results
 
-- Factor 6 & 12 is the only MOFA2 factor tied to survival.
+- Factor 6 & 12 are the only MOFA2 factors tied to survival.
 - Cox model on the Factor 6/12 genes: C-index 0.732, KM p < 0.0001 for
   high vs. low risk.
-- 47 of 49 genes detected in the scRNA-seq cohort, with clear cell-type
+- 47 of 50 genes detected in the scRNA-seq cohort, with clear cell-type
   specific expression.
 - Pathway enrichment points to B-cell mediated immunity.
 - Random Forest / XGBoost classifiers (3-year survival, direct
@@ -74,7 +74,7 @@ GitHub) - it's pulled from these public sources instead:
 - Random Survival Forest: C-index 0.573 - similarly modest.
 
 Worth being honest about that last two: the Cox model does noticeably
-better than either ML baseline here, most likely because 168-370 patients
+better than either ML baseline here, most likely because 168-370 patients(classifer-RSF)
 and 50 genes just isn't much for a forest model to learn from.
 
 ## Repository structure
