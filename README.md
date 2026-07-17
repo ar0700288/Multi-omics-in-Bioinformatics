@@ -31,8 +31,8 @@ Sub-Questions:
 alignment. None of the raw data is stored in this repo (too large for
 GitHub) - it's pulled from these public sources instead:
 
-- TCGA-COAD / TCGA-READ (RNA-seq, methylation, mutations, clinical):
-  [GDC Data Portal](https://portal.gdc.cancer.gov/projects/TCGA-COAD),
+- TCGA-COAD / TCGA-READ (RNA-seq, methylation, mutations, clinical), on the
+  GDC Data Portal: [TCGA-COAD](https://portal.gdc.cancer.gov/projects/TCGA-COAD),
   [TCGA-READ](https://portal.gdc.cancer.gov/projects/TCGA-READ) - downloaded
   programmatically via `TCGAbiolinks` in `01_QC_EDA.Rmd` (see Reproducing
   below).
