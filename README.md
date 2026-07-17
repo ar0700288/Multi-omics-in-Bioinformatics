@@ -35,7 +35,9 @@ GitHub) - it's pulled from these public sources instead:
   GDC Data Portal: [TCGA-COAD](https://portal.gdc.cancer.gov/projects/TCGA-COAD),
   [TCGA-READ](https://portal.gdc.cancer.gov/projects/TCGA-READ) - downloaded
   programmatically via `TCGAbiolinks` in `01_QC_EDA.Rmd` (see Reproducing
-  below).
+  below). Colon (COAD) and rectal (READ) adenocarcinoma are merged here
+  because they share the same phenotype and molecular signals and are
+  routinely treated as one disease, colorectal cancer.
 - GSE132465 (independent scRNA-seq validation cohort, Lee et al. 2020):
   [NCBI GEO accession GSE132465](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE132465) -
   download the cell annotation and expression matrix files from there and
