@@ -14,6 +14,11 @@ MANIFEST
 *.log
 *_cache/
 *_files/
+*.knit.md
+
+# ── Python build artifacts ──
+__pycache__/
+*.pyc
 
 # ── System files ──
 .DS_Store

@@ -1,0 +1,165 @@
+---
+title: "External_scRNA_Validation"
+author: "Ali Raza, Pritom, niloufer"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+External validation of the Factor 6 & 12 top genes (from
+02_mofa_integration.Rmd) against an independent single-cell CRC dataset
+(GSE132465). The Cox model in 04_survival_analysis.Rmd was trained on bulk
+RNA-seq, which averages over every cell in a tumor sample - checking the
+same genes in single-cell data tells us whether they're actually driven by
+a specific cell type, rather than being a bulk-only artifact.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+data_dir <- "../data"
+out_dir  <- "../Outputs"
+fig_dir  <- file.path(out_dir, "03_scrna_validation")   # this file's plots go here
+gse_dir  <- file.path(data_dir, "GSE132465")         # raw scRNA-seq download
+dir.create(data_dir, showWarnings = FALSE)
+dir.create(out_dir,  showWarnings = FALSE)
+dir.create(fig_dir,  showWarnings = FALSE)
+
+library(ggplot2)
+
+cat("data loaded\n")
+```
+
+## Load the subsampled Seurat object
+
+`sc_small.rds` is a 500-cells-per-type subsample already pulled out of the
+full ~1GB GSE132465 matrix (see `build-sc-small` below for how it was
+built).
+
+```{r scrna-load-cached}
+library(Seurat)
+
+sc <- readRDS(file.path(data_dir, "sc_small.rds"))
+cat("loaded:", ncol(sc), "cells x", nrow(sc), "genes\n")
+```
+
+This is how `sc_small.rds` itself was produced - kept here for reference,
+switched off since the cached file already exists.
+
+```{r build-sc-small, eval=FALSE}
+library(data.table)
+
+meta <- read.table(
+  gzfile(file.path(gse_dir, "GSE132465_GEO_processed_CRC_10X_cell_annotation.txt.gz")),
+  header = TRUE, row.names = 1, sep = "\t"
+)
+cat("total cells:", nrow(meta), "\n")
+
+set.seed(42)
+
+# mast cells only have 3 tumor cells here, not enough to say anything useful
+tumor_meta <- meta[meta$Class == "Tumor" & meta$Cell_type != "Mast cells", ]
+
+sampled_cells <- do.call(rbind, lapply(
+  unique(tumor_meta$Cell_type), function(ct) {
+    cells <- rownames(tumor_meta[tumor_meta$Cell_type == ct, ])
+    n     <- min(500, length(cells))
+    data.frame(barcode = sample(cells, n), Cell_type = ct)
+  }
+))
+
+matrix_file <- file.path(gse_dir, "GSE132465_GEO_processed_CRC_10X_natural_log_TPM_matrix.txt.gz")
+
+# peek at the header first so we only read the columns we actually want
+header    <- fread(matrix_file, nrows = 0)
+all_cols  <- names(header)
+keep_cols <- c(all_cols[1], sampled_cells$barcode[sampled_cells$barcode %in% all_cols])
+
+mat_small <- fread(matrix_file, select = keep_cols)
+mat <- as.matrix(mat_small[, -1])
+rownames(mat) <- mat_small[[1]]
+
+meta_small <- meta[colnames(mat), ]
+sc <- CreateSeuratObject(counts = mat, meta.data = meta_small)
+saveRDS(sc, file.path(data_dir, "sc_small.rds"))
+```
+
+## QC and normalize
+
+Standard scRNA-seq QC - drop cells with too few or too many detected genes
+(empty droplets / doublets) and cells with high mitochondrial content
+(dying cells), then normalize so expression is comparable across cells.
+
+```{r scrna-qc-normalize}
+sc[["percent.mt"]] <- PercentageFeatureSet(sc, pattern = "^MT-")
+sc <- subset(sc, subset = nFeature_RNA > 200 &
+                          nFeature_RNA < 6000 &
+                          percent.mt   < 25)
+cat("after QC:", ncol(sc), "cells\n")
+
+sc <- NormalizeData(sc)
+```
+
+## Map genes to symbols and check overlap
+
+The top genes from 02_mofa_integration.Rmd are ENSEMBL IDs (with version
+numbers); scRNA-seq gene names are plain symbols, so convert and see how
+many of our genes are even present in this dataset.
+
+```{r convert-and-overlap}
+library(org.Hs.eg.db)
+
+top_genes_f6  <- colnames(read.csv(file.path(data_dir, "top_extracted50_genes.csv"), row.names = 1))
+ensembl_clean <- gsub("\\..*", "", top_genes_f6)
+
+gene_symbols <- mapIds(
+  org.Hs.eg.db,
+  keys      = ensembl_clean,
+  column    = "SYMBOL",
+  keytype   = "ENSEMBL",
+  multiVals = "first"
+)
+gene_symbols <- gene_symbols[!is.na(gene_symbols)]
+cat("successfully converted:", length(gene_symbols), "genes\n")
+print(gene_symbols)
+
+overlap <- intersect(gene_symbols, rownames(sc))
+cat("genes found in scRNA-seq:", length(overlap), "out of", length(gene_symbols), "\n")
+```
+
+## Expression heatmap by cell type
+
+Average expression of the overlapping genes within each cell type - a
+gene that's specific to one cell type will show up as a bright single
+column here rather than being spread evenly across all of them.
+
+```{r factor6-heatmap}
+library(tidyr)
+
+Idents(sc) <- "Cell_type"
+
+avg_long <- AverageExpression(sc, features = overlap,
+                               group.by = "Cell_type")$RNA |>
+            as.data.frame() |>
+            tibble::rownames_to_column("gene") |>
+            pivot_longer(-gene, names_to = "cell_type",
+                         values_to = "expression")
+
+p <- ggplot(avg_long, aes(x = cell_type, y = gene, fill = expression)) +
+  geom_tile(color = "white", linewidth = 0.4) +
+  scale_fill_gradient(low = "lightgrey", high = "#C0392B") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+        axis.text.y = element_text(size = 9, face = "bold"),
+        panel.grid  = element_blank(),
+        plot.title  = element_text(face = "bold", size = 15)) +
+  labs(title = "Factor 6 & 12 Genes - Expression per Cell Type",
+       x = "Cell Type", y = NULL, fill = "Avg Expression")
+
+# tall image - long gene list stacked vertically
+ggsave(file.path(fig_dir, "factor6&12_heatmap.png"), plot = p, width = 12, height = 18, dpi = 200)
+cat("saved: factor6_heatmap.png\n")
+```

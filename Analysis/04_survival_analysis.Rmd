@@ -1,0 +1,128 @@
+---
+title: "Survival_Analysis"
+author: "Ali Raza, Pritom, niloufer"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+Cox proportional-hazards model on the top Factor 6 & 12 genes. Picks up
+clinical data from 01_QC_EDA.Rmd and the ML feature matrix exported by
+02_mofa_integration.Rmd (which also covers the per-factor survival
+screening).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+data_dir <- "../data"
+out_dir  <- "../Outputs"
+fig_dir  <- file.path(out_dir, "04_survival_analysis")   # this file's plots go here
+dir.create(data_dir, showWarnings = FALSE)
+dir.create(out_dir,  showWarnings = FALSE)
+dir.create(fig_dir,  showWarnings = FALSE)
+
+library(ggplot2)
+library(dplyr)
+library(survival)
+library(survminer)
+
+clin_final <- readRDS(file.path(data_dir, "clin_final.rds"))
+
+cat("data loaded\n")
+```
+
+## Cox proportional-hazards model
+
+Cox model on the top Factor 6 & 12 genes exported from 02_mofa_integration.Rmd.
+
+```{r cox-regression}
+ml_df <- read.csv(file.path(data_dir, "top_extracted50_genes.csv"), row.names = 1)
+
+sample_ids   <- substr(rownames(ml_df), 1, 12)
+clin_matched <- clin_final[match(sample_ids, clin_final$submitter_id), ]
+
+ml_df$time  <- ifelse(clin_matched$vital_status == "Dead",
+                       clin_matched$days_to_death,
+                       clin_matched$days_to_last_follow_up)
+ml_df$event <- ifelse(clin_matched$vital_status == "Dead", 1, 0)
+ml_df$label <- NULL
+
+ml_df <- ml_df[!is.na(ml_df$time) & ml_df$time > 0, ]
+cat("patients in Cox:", nrow(ml_df), "\n")
+
+cox_fit <- coxph(Surv(time, event) ~ ., data = ml_df, x = TRUE)
+cat("C-index:", round(cox_fit$concordance["concordance"], 3), "\n")
+summary(cox_fit)
+
+# 07_annotation.Rmd needs the fitted model to pull gene coefficients
+saveRDS(cox_fit, file.path(data_dir, "cox_fit.rds"))
+```
+
+Quick sanity check on the cohort that actually went into the Cox model -
+how many patients, how many events vs. censored, and the follow-up range.
+
+```{r event-summary}
+cat("total patients in Cox:    ", nrow(ml_df), "\n")
+cat("total deaths (events):    ", sum(ml_df$event == 1), "\n")
+cat("censored (alive/unknown): ", sum(ml_df$event == 0), "\n")
+cat("median follow-up (days):  ", round(median(ml_df$time), 0), "\n")
+cat("max follow-up (days):     ", max(ml_df$time), "\n")
+```
+
+Split patients into high/low risk by their Cox linear predictor (median
+split) and plot Kaplan-Meier curves for the two groups - this is the plot
+that actually shows whether the model separates survival outcomes.
+
+```{r cox-km}
+# linear predictor already gives us a risk score, no need to call predict()
+pred <- cox_fit$linear.predictors
+ml_df$risk_group <- ifelse(pred > median(pred), "High", "Low")
+
+fit_risk <- survfit(Surv(time, event) ~ risk_group, data = ml_df)
+
+km_plot <- ggsurvplot(fit_risk, data = ml_df, pval = TRUE,
+           palette      = c("#C0392B", "#2E4A7A"),
+           title        = "KM - High vs Low Cox Risk Score",
+           xlab         = "Days",
+           ylab         = "Survival Probability",
+           legend.title = "Risk Group",
+           ggtheme      = theme_minimal())
+km_plot
+ggsave(file.path(fig_dir, "cox_km_risk_groups.png"), km_plot$plot, width = 7, height = 5)
+```
+
+Rank genes by absolute Cox coefficient and plot them as risk-increasing or
+protective - these 15 genes are what 07_annotation.Rmd digs into further.
+
+```{r top-cox-genes-plot}
+cox_summary <- as.data.frame(summary(cox_fit)$coefficients)
+cox_summary$gene <- rownames(cox_summary)
+
+top_genes_cox <- cox_summary |>
+  arrange(desc(abs(coef))) |>
+  dplyr::select(gene, coef, `exp(coef)`, `Pr(>|z|)`) |>
+  head(15)
+
+colnames(top_genes_cox) <- c("gene", "coef", "hazard_ratio", "p_value")
+top_genes_cox$direction <- ifelse(top_genes_cox$coef > 0, "Risk", "Protective")
+
+p <- ggplot(top_genes_cox, aes(x = reorder(gene, abs(coef)),
+                           y = coef,
+                           fill = direction)) +
+  geom_bar(stat = "identity", width = 0.7, alpha = 0.85) +
+  scale_fill_manual(values = c("Risk" = "#C0392B", "Protective" = "#2E4A7A")) +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Top 15 Genes Driving the Cox Survival Model",
+       x     = "Gene",
+       y     = "Cox Coefficient",
+       fill  = "Direction") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  theme(plot.title = element_text(face = "bold", size = 13))
+p
+ggsave(file.path(fig_dir, "top_cox_genes.png"), p, width = 7, height = 6)
+```
