@@ -233,7 +233,7 @@ cat("methylation cleaned:", dim(meth_M), "\n")
 ### Mutation binary matrix
 
 Take the 100 most frequently mutated genes and turn the mutation calls
-into a simple patient x gene matrix of 0/1 (mutated or not) - MOFA2's
+into a simple patient x gene matrix of 0/1 (mutated or not) , MOFA2's
 Bernoulli likelihood expects binary input like this.
 
 ```{r mut-binary-matrix}
@@ -520,7 +520,7 @@ oncoplot(maf = maf_obj, top = 20)
 ### Tumor mutation burden (TMB) distribution
 
 Total mutation count per patient, on a log scale - CRC typically shows a
-bimodal split between MSI-H (hypermutated) and MSS tumors.
+bimodal split.
 
 ```{r tmb-histogram}
 # TMB is bimodal in CRC 
@@ -542,7 +542,7 @@ ggsave(file.path(fig_dir, "tmb_histogram.png"), p, width = 7, height = 5)
 ## Cross-modal patient alignment
 
 Take the patients present in all three omics layers and confirm the column
-order matches across matrices - MOFA2 needs that for the next step.
+order matches across matrices and MOFA2 needs that for the next step.
 
 ```{r align-patients}
 cat("RNA final:  ", dim(rna_final),  "\n")
