@@ -1,7 +1,11 @@
 # Multi-Omics Integration in Colorectal Cancer
 
-<font color="#2E4A7A">Data Science in Life Sciences, Freie Universitat Berlin, 2026</font>
-<font color="#C0392B">Authors: Ali Raza, Pritom, Niloufer</font>
+> [!NOTE]
+> Data Science in Life Sciences, Freie Universitat Berlin, 2026
+
+> [!IMPORTANT]
+> Authors: Ali Raza, Pritom, Niloufer
+
 Supervisor: Kathrina Jahn
 
 ## What this is
