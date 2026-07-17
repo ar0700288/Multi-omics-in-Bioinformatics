@@ -85,8 +85,13 @@ data/         final matrices/tables each step depends on (rds, csv)
 Outputs/      one subfolder of figures per analysis file
 ```
 
-Large raw/intermediate files (`.rds`, GDC/GEO downloads) are excluded via
-`.gitignore` and regenerated locally when the pipeline runs.
+Most raw/intermediate `.rds` files and the GDC/GEO downloads are too large
+for GitHub and excluded via `.gitignore` - see Data above for where to get
+them. Five small checkpoint files are included directly, each letting you
+skip an expensive step: `mofa_model.rds` (skips 30-60 min MOFA training),
+`cox_fit.rds` (skips refitting the Cox model), `sc_small.rds` (skips
+downloading/subsampling the ~1GB scRNA-seq matrix), and `clin_final.rds` /
+`clinical.rds` (clinical data used across several steps).
 
 ## Requirements
 
@@ -108,17 +113,20 @@ pyreadr, matplotlib
 
 ## Reproducing
 
-1. Clone the repo.
-2. Run `01_QC_EDA.Rmd` first (its download chunks are `eval=FALSE` by
-   default - flip to `TRUE` for a first run to pull data from GDC).
-3. Knit the rest of the files in order, 02 through 07. MOFA2 training
-   (`02_mofa_integration.Rmd`) takes 30-60 minutes and is also gated
-   behind `eval=FALSE`; it reloads a cached model after that.
+1. Clone the repo. The five checkpoint files listed above are already in
+   `data/`, so most steps can be knit as-is without redoing the expensive
+   parts first.
+2. To reproduce from scratch anyway: run `01_QC_EDA.Rmd`'s download chunks
+   (`eval=FALSE` by default - flip to `TRUE`) to pull data from GDC, then
+   knit the rest of the files in order, 02 through 07. MOFA2 training
+   (`02_mofa_integration.Rmd`, also `eval=FALSE`) takes 30-60 minutes.
+3. `03_external_scrna_validate.Rmd` only needs the raw GSE132465 files
+   (see Data above) if `data/sc_small.rds` is deleted or you want a
+   different cell subsample - otherwise it reads the cached one directly.
 
-`03_external_scrna_validate.Rmd` expects the GSE132465 files in
-`data/GSE132465/`. The two Python scripts (05, 06) need
-`data/top_extracted50_genes.csv` and `data/clin_final.rds`, both produced
-earlier in the pipeline.
+The two Python scripts (05, 06) need `data/top_extracted50_genes.csv`
+(produced by `02_mofa_integration.Rmd`) and `data/clin_final.rds`
+(included).
 
 ## References
 
