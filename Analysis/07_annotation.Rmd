@@ -29,6 +29,8 @@ dir.create(fig_dir,  showWarnings = FALSE)
 library(ggplot2)
 library(dplyr)
 library(org.Hs.eg.db)
+library(gridExtra)
+library(grid)
 
 cox_fit <- readRDS(file.path(data_dir, "cox_fit.rds"))
 
@@ -67,6 +69,20 @@ annot_df <- data.frame(
 print(annot_df)
 write.csv(annot_df, file.path(data_dir, "top15_annotated_genes.csv"), row.names = FALSE)
 cat("saved: top15_annotated_genes.csv\n")
+
+# plain table image - just the data, bold headers, no fills
+plain_theme <- ttheme_default(
+  base_size = 11,
+  core = list(bg_params = list(fill = "white", col = NA))
+)
+gene_table <- tableGrob(annot_df, rows = NULL, theme = plain_theme)
+
+# size the image to the table's actual dimensions so nothing gets cropped
+gt_w <- grid::convertWidth(sum(gene_table$widths),   "in", valueOnly = TRUE)
+gt_h <- grid::convertHeight(sum(gene_table$heights), "in", valueOnly = TRUE)
+ggsave(file.path(fig_dir, "annotated_genes_table.png"), gene_table,
+       width = gt_w + 0.3, height = gt_h + 0.3, dpi = 150)
+cat("saved: annotated_genes_table.png\n")
 ```
 
 ### Pathway enrichment
@@ -90,6 +106,28 @@ top_paths <- gost_res$result |>
   dplyr::select(source, term_name, p_value, intersection_size) |>
   head(15)
 print(top_paths)
+
+# styled table image - dark header + alternating row stripes, same blue
+# used in the plots throughout this project
+paths_display <- top_paths
+paths_display$p_value <- formatC(paths_display$p_value, format = "e", digits = 2)
+colnames(paths_display) <- c("Database", "Pathway", "p-value", "Genes")
+
+striped_theme <- ttheme_default(
+  base_size = 10,
+  core = list(bg_params = list(fill = rep(c("white", "grey95"), length.out = nrow(paths_display)),
+                                col = NA)),
+  colhead = list(fg_params = list(col = "white", fontface = "bold"),
+                 bg_params = list(fill = "#2E4A7A", col = NA))
+)
+paths_table <- tableGrob(paths_display, rows = NULL, theme = striped_theme)
+
+# size the image to the table's actual dimensions so nothing gets cropped
+pt_w <- grid::convertWidth(sum(paths_table$widths),   "in", valueOnly = TRUE)
+pt_h <- grid::convertHeight(sum(paths_table$heights), "in", valueOnly = TRUE)
+ggsave(file.path(fig_dir, "pathway_enrichment_table.png"), paths_table,
+       width = pt_w + 0.3, height = pt_h + 0.3, dpi = 150)
+cat("saved: pathway_enrichment_table.png\n")
 
 p <- ggplot(top_paths, aes(x = reorder(term_name, -log10(p_value)),
                        y = -log10(p_value),

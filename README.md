@@ -78,7 +78,28 @@ GitHub) - it's pulled from these public sources instead:
 
 Worth being honest about that last two: the Cox model does noticeably
 better than either ML baseline here, most likely because 168-370 patients(classifer-RSF)
-and 50 genes just isn't much for a forest model to learn from.
+and 50 genes just isn't much for a forest model to learn from. Part of the
+gap is also methodological, not just sample size - see Validation below,
+the three models aren't evaluated the same way.
+
+### Validation
+
+The three models don't use the same evaluation setup, so their numbers
+aren't directly comparable:
+
+- **Cox model** (`04_survival_analysis.Rmd`): fit on the full cohort and
+  the C-index of 0.732 is read off that same fit - no train/test split or
+  cross-validation. This is an in-sample concordance, and is expected to
+  look better than a genuinely held-out estimate.
+- **Random Forest / XGBoost** (`05_ml_classification.py`): 5-fold
+  stratified cross-validation. Class-weighting/SMOTE/undersampling are
+  each rebuilt inside every training fold so the held-out fold is never
+  touched by resampling, and the reported accuracy/precision/recall are
+  averaged across the 5 folds.
+- **Random Survival Forest** (`06_random_survival_forest.py`): a single
+  70/30 stratified train/test split (stratified on event so both halves
+  have a similar death/censoring ratio); the C-index is computed on the
+  30% held-out test set only.
 
 ## Repository structure
 
