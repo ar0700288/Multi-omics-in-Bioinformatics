@@ -186,3 +186,10 @@ both.
   2366–2383 (2024). (SEA-AD reference taxonomy)
 - Wolf FA, Angerer P, Theis FJ. SCANPY: large-scale single-cell gene expression data analysis.
   *Genome Biol* 19, 15 (2018).
+
+## License
+
+The code in this repository (notebooks, `run_pipeline.py`, `src/`) is released under the
+[MIT License](LICENSE). The input datasets, the MAGMA software and the Allen Institute reference
+data are not covered by it and remain under their providers' own terms — see
+[`data/README.md`](data/README.md) and [`tools/README.md`](tools/README.md).
