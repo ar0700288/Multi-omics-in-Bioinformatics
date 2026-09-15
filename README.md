@@ -4,8 +4,9 @@ An end-to-end pipeline that combines single-nucleus RNA-seq of human entorhinal 
 Alzheimer's disease GWAS summary statistics, and asks which cell types and cell states carry the
 polygenic risk signal.
 
-The short answer: **overwhelmingly microglia** — and within microglia, the
-disease-associated states that the Allen SEA-AD atlas defines from AD donors.
+The short answer: **overwhelmingly microglia, as a cell type.** There is no evidence here that the
+specific "causal" glial states proposed by Green *et al.* (2024) — Mic.12, Mic.13, Ast.10 — carry more
+inherited risk than the rest of their cell type once the shared gene *APOE* is accounted for.
 
 ## What it does
 
@@ -57,7 +58,7 @@ labels (`mg`: z = 5.69) and with unsupervised Leiden clusters (the microglial cl
 Only 2 individual nuclei pass FDR < 0.1 (44 at FDR < 0.2) — the signal is a population shift,
 not a handful of outlier cells.
 
-**4. Within microglia, the disease-associated states carry it and are expanded in AD.**
+**4. Disease-associated microglial states expand in AD, but do not carry extra risk.**
 
 | Microglial supertype | AD | control | odds ratio (AD) | Fisher FDR | scDRS MC z |
 |---|---:|---:|---:|---:|---:|
@@ -66,14 +67,27 @@ not a handful of outlier cells.
 | Micro-PVM_4-SEAAD | 26 | 18 | 1.62 | 0.18 | 6.31 |
 | Micro-PVM_2 (homeostatic) | 62 | 215 | **0.15** | 1×10⁻²⁸ | 4.84 |
 
-The homeostatic state is depleted about 7-fold in AD donors while the SEA-AD disease-associated
-states expand. See the caveat on composition below before reading these as disease effects.
+All four supertypes reach the MC floor because they are microglia, but their mean scores do not
+separate disease-associated from homeostatic states: homeostatic Micro-PVM_2 (+1.68) scores as high
+as Micro-PVM_3-SEAAD (+1.73), and the AD-expanded Micro-PVM_2_3-SEAAD is the lowest (+0.64). Mean
+scDRS in microglia is also identical in AD and control donors (+1.34 vs +1.35, p = 0.89). The
+homeostatic state is depleted about 7-fold in AD donors while SEA-AD disease-associated states
+expand — see the caveat on composition below.
 
-**5. The marker-score version of the question agrees, weakly.** Nuclei in the top quartile of the
-Mic13 score carry more AD risk than the rest (Mann-Whitney FDR = 2×10⁻¹⁴), Mic12 less so
-(FDR = 1×10⁻³), and the astrocytic Ast10 state not at all (FDR = 0.91). The effect is small
-(Spearman ρ = 0.09), and the high-Mic13 quartile is only 10 % microglia — the reference labels in
-point 3 are the sharper instrument.
+**5. The Mic.12 / Mic.13 / Ast.10 state test (the original project question).** Across all nuclei,
+the top Mic13-score quartile carries more AD risk than the rest (Mann-Whitney FDR = 2×10⁻¹⁴), Mic12
+weakly (FDR = 1×10⁻³), Ast10 not at all (FDR = 0.91). But that headline is misleading on its own:
+
+- the effect is tiny (Spearman ρ = 0.09) and the high-Mic13 quartile is only 10 % microglia;
+- *APOE* is both a Mic.12/Mic.13 marker and one of the top-1,000 scDRS risk genes (MAGMA Z = 7.4).
+  **Within microglia**, Mic13 correlates with scDRS (ρ = 0.14, p = 3×10⁻⁴), but rebuilding the score
+  without *APOE* removes it (ρ = 0.035, p = 0.37); Mic12 without *APOE* likewise (ρ = −0.03, p = 0.48);
+- within astrocytes, Ast10-high nuclei do not carry more risk (p = 0.06).
+
+The Mic13 score is nonetheless higher in AD than control microglia (+0.76 vs +0.44, p = 2×10⁻⁹),
+consistent with Green *et al.*'s placement of Mic.13 downstream of amyloid. Read together: inherited
+AD risk marks the microglial lineage, while the disease-associated states look like reactive states
+rather than genetically primed ones — within the limits of this 12-donor pilot.
 
 ### Outputs
 
