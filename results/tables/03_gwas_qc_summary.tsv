@@ -1,0 +1,7 @@
+step	n_variants	dropped	pct_of_raw
+raw	21101114	0	100.0
+strand-unambiguous	18080993	3020121	85.69
+autosomes	18080993	0	85.69
+MAF 1-99%	7356093	10724900	34.86
+has rsID	7356091	2	34.86
+valid p-value	7356090	1	34.86
