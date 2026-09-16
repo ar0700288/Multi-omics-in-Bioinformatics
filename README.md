@@ -139,6 +139,8 @@ types. Inside microglia the links are driven largely by *APOE*.
 ## How to run
 
 ```bash
+git clone https://github.com/ar0700288/AD-glial-states-genetic-risk.git
+cd AD-glial-states-genetic-risk
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
 python run_pipeline.py
