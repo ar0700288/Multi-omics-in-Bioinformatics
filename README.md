@@ -181,6 +181,13 @@ correction, a between-condition difference in cell-state *composition* (point 4 
 tests treat nuclei as independent. The scDRS cell-type association (point 3) does not depend on
 condition labels and is not affected by this.
 
+**Half the top GWAS genes are not in the expression matrix.** The GEO matrix holds only 10,850
+genes, so of MAGMA's 18,626 genes 9,349 can be used, and 75 of the 147 Bonferroni-significant genes
+are missing — including *TREM2*, *MS4A4E*, *MS4A2*, *MS4A3* and *ACE* (most of the rest are
+*APOE*-locus neighbours carried by LD). scDRS therefore scores the top 1,000 genes *among those
+measured* (Z 2.0–11.0). Losing microglial genes such as *TREM2* makes the microglia result
+conservative rather than inflated; a full-transcriptome atlas (SEA-AD, ROSMAP) would remove this gap.
+
 **The marker sets are small.** The Mic12 / Mic13 / Ast10 scores in notebook 05 use 3–5 hand-picked
 genes, two of which are absent from this matrix. They are a descriptive axis, not a cell-state
 call; notebook 07's reference-based labels are the trustworthy annotation, and notebook 08 reports
