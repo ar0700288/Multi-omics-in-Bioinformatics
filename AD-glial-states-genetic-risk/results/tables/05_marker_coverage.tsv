@@ -1,0 +1,4 @@
+state	n_requested	n_present	present	missing
+Mic12	3	2	APOE, GPNMB	CPM
+Mic13	5	4	APOE, GPNMB, SPP1, TPRG1	TREM2
+Ast10	4	3	SLC38A2, MT1E, MT2A	MT1X

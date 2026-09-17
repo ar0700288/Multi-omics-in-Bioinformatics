@@ -1,0 +1,29 @@
+# ---- large inputs: see data/README.md for download instructions ----
+data/raw/
+
+# ---- rebuildable intermediates (h5ad, MAGMA raw output, full scDRS matrix) ----
+interim/
+
+# ---- third-party binaries and LD reference panel: see tools/README.md ----
+tools/magma/
+tools/**/*.exe
+tools/**/*.bed
+tools/**/*.bim
+tools/**/*.fam
+tools/**/*.synonyms
+tools/**/*.pdf
+
+# ---- python ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
+
+# ---- os / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
