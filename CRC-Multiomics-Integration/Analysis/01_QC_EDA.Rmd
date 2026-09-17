@@ -1,0 +1,554 @@
+---
+title: "QC_EDA"
+author: "Ali Raza, Pritom, niloufer"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+Data acquisition, per-layer preprocessing and QC for the CRC multi-omics
+project. Picks up where the raw GDC downloads left off and produces the
+cleaned RNA/methylation/mutation matrices used by the MOFA2 step.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+# paths are relative to this file (Analysis/), so ../data and ../Outputs
+# point at the project-level folders
+data_dir <- "../data"
+out_dir  <- "../Outputs"
+fig_dir  <- file.path(out_dir, "01_eda")   # this file's plots go here
+dir.create(data_dir, showWarnings = FALSE)
+dir.create(out_dir,  showWarnings = FALSE)
+dir.create(fig_dir,  showWarnings = FALSE)
+
+library(SummarizedExperiment)
+library(TCGAbiolinks)
+library(DESeq2)
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+library(reshape2)
+library(ggplot2)
+library(dplyr)
+library(MOFA2)
+
+# these come from the download chunks below, cached so we don't redownload
+rna_data  <- readRDS(file.path(data_dir, "rna_data.rds"))
+meth_data <- readRDS(file.path(data_dir, "meth_data.rds"))
+mut_data  <- readRDS(file.path(data_dir, "mut_data.rds"))
+clinical  <- readRDS(file.path(data_dir, "clinical.rds"))
+
+cat("data loaded\n")
+```
+
+## Data acquisition
+
+Raw data comes from GDC via TCGAbiolinks: RNA-seq (STAR counts), methylation
+(450K beta values), somatic mutations (masked MAF) and clinical metadata for
+TCGA-COAD + TCGA-READ. Only needs to run once, so these chunks are switched
+off (`eval=FALSE`) - flip to TRUE for a first run.
+
+Data download: none of this is stored in the repo (too large for GitHub) -
+the chunks below pull it programmatically from the GDC Data Portal:
+[TCGA-COAD](https://portal.gdc.cancer.gov/projects/TCGA-COAD),
+[TCGA-READ](https://portal.gdc.cancer.gov/projects/TCGA-READ).
+
+```{r download-rna, eval=FALSE}
+# raw STAR counts, not TPM - DESeq2 needs integer counts
+query_rna <- GDCquery(
+  project       = c("TCGA-COAD", "TCGA-READ"),
+  data.category = "Transcriptome Profiling",
+  data.type     = "Gene Expression Quantification",
+  workflow.type = "STAR - Counts"
+)
+
+GDCdownload(query_rna)
+rna_data <- GDCprepare(query_rna)
+```
+
+```{r download-meth, eval=FALSE}
+# Illumina 450K beta values, same two projects
+query_meth <- GDCquery(
+  project       = c("TCGA-COAD", "TCGA-READ"),
+  data.category = "DNA Methylation",
+  data.type     = "Methylation Beta Value",
+  platform      = "Illumina Human Methylation 450"
+)
+
+GDCdownload(query_meth, files.per.chunk = 10)
+meth_data <- GDCprepare(query_meth)
+```
+
+```{r download-mut, eval=FALSE}
+# open access masked MAF, no dbGaP approval needed
+query_mut <- GDCquery(
+  project       = c("TCGA-COAD", "TCGA-READ"),
+  data.category = "Simple Nucleotide Variation",
+  data.type     = "Masked Somatic Mutation",
+  access        = "open"
+)
+
+GDCdownload(query_mut)
+mut_data <- GDCprepare(query_mut)
+```
+
+```{r download-clinical, eval=FALSE}
+# clinical metadata isn't in a GDCquery/GDCdownload flow, it's its own endpoint
+clin_coad <- GDCquery_clinic(project = "TCGA-COAD", type = "clinical")
+clin_read <- GDCquery_clinic(project = "TCGA-READ",  type = "clinical")
+clinical  <- bind_rows(clin_coad, clin_read)
+saveRDS(clinical, file.path(data_dir, "clinical.rds"))
+```
+
+```{r save-raw, eval=FALSE}
+# cache the raw objects so we never have to download GDC again
+saveRDS(rna_data,  file.path(data_dir, "rna_data.rds"))
+saveRDS(meth_data, file.path(data_dir, "meth_data.rds"))
+saveRDS(mut_data,  file.path(data_dir, "mut_data.rds"))
+```
+
+## Raw data QC
+
+Quick sanity check before any filtering - dimensions look right and primary
+tumor samples dominate each layer.
+
+```{r qc-dimensions}
+dim(assay(rna_data))    # ~60,000 genes x ~460 samples
+dim(assay(meth_data))   # ~450,000 probes x ~460 samples
+dim(mut_data)
+
+table(rna_data$sample_type)
+table(meth_data$sample_type)
+
+dim(clinical)
+colnames(clinical)
+```
+
+## Per-layer preprocessing
+
+Each layer gets cleaned separately before merging: RNA-seq is VST
+normalized, methylation is filtered down to usable probes and converted to
+M-values, mutations get collapsed to a binary matrix over the top mutated
+genes.
+
+### RNA-seq normalization
+
+Keep primary tumor samples only, then pull out the raw STAR read counts -
+that's the assay DESeq2 needs (not TPM or FPKM).
+
+```{r rna-filter-primary}
+# drop normals/metastases, keep primary tumor only
+rna_pt <- rna_data[, rna_data$sample_type == "Primary Tumor"]
+
+cat("available assays:\n")
+print(assayNames(rna_pt))
+
+rna_mat <- assay(rna_pt, "unstranded")
+cat("RNA matrix dimensions:", dim(rna_mat), "\n")
+```
+
+Run VST (variance-stabilizing transform) on the count matrix after
+dropping genes with too few reads across too few samples - this is
+normalization for downstream analysis, not a differential expression test,
+so the DESeq2 design is intentionally just an intercept.
+
+```{r rna-vst}
+rna_mat <- as.matrix(rna_mat)
+rna_mat <- round(rna_mat)
+storage.mode(rna_mat) <- "integer"
+
+cat("total genes:        ", nrow(rna_mat), "\n")
+cat("duplicate gene IDs: ", sum(duplicated(rownames(rna_mat))), "\n")
+
+# no covariates here, just want VST normalization not DE testing
+coldata <- data.frame(cond = factor(rep("tumor", ncol(rna_mat))))
+rownames(coldata) <- colnames(rna_mat)
+
+cat("matrix columns:", ncol(rna_mat), "| coldata rows:", nrow(coldata), "\n")
+
+dds <- DESeqDataSetFromMatrix(
+  countData = rna_mat,
+  colData   = coldata,
+  design    = ~ 1
+)
+dds <- dds[rowSums(counts(dds) >= 10) >= 10, ]
+cat("after low-count filter:", nrow(dds), "genes\n")
+
+# blind=TRUE since we're normalizing, not testing a design
+vsd      <- vst(dds, blind = TRUE)
+rna_norm <- assay(vsd)
+
+cat("RNA normalized:", dim(rna_norm), "\n")
+```
+
+### Methylation cleaning
+
+Keep primary tumor samples, drop probes that are unreliable for one reason
+or another (missing values, sex chromosomes, SNP overlap, known
+cross-reactivity), then convert beta values to M-values for downstream
+statistics.
+
+```{r meth-filter-probes}
+meth_pt  <- meth_data[, meth_data$sample_type == "Primary Tumor"]
+meth_mat <- assay(meth_pt)
+
+# drop probes with any missing values
+meth_mat <- meth_mat[complete.cases(meth_mat), ]
+
+anno <- as.data.frame(
+  getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+)
+
+# sex chromosome probes confound with patient sex, drop them
+sex_probes <- rownames(anno)[anno$chr %in% c("chrX", "chrY")]
+meth_mat   <- meth_mat[!rownames(meth_mat) %in% sex_probes, ]
+
+# probes overlapping a SNP pick up genotype, not methylation
+snp_probes <- rownames(anno)[!is.na(anno$Probe_rs) & anno$Probe_rs != ""]
+meth_mat   <- meth_mat[!rownames(meth_mat) %in% snp_probes, ]
+
+# known cross-reactive 450K probes (Chen et al. list), cache locally
+cross_probes_file <- file.path(data_dir, "cross_reactive_probes.txt")
+if (!file.exists(cross_probes_file)) {
+  download.file(
+    "https://raw.githubusercontent.com/sirselim/illumina450k_filtering/master/48639-non-specific-probes-Illumina450k.csv",
+    cross_probes_file
+  )
+}
+cross_probes <- read.csv(cross_probes_file)$TargetID
+meth_mat     <- meth_mat[!rownames(meth_mat) %in% cross_probes, ]
+
+# M-values behave better statistically than betas (less compressed near 0/1)
+# clip first so log() doesn't blow up at the extremes
+meth_mat[meth_mat <= 0.001] <- 0.001
+meth_mat[meth_mat >= 0.999] <- 0.999
+meth_M <- log2(meth_mat / (1 - meth_mat))
+
+cat("methylation cleaned:", dim(meth_M), "\n")
+```
+
+### Mutation binary matrix
+
+Take the 100 most frequently mutated genes and turn the mutation calls
+into a simple patient x gene matrix of 0/1 (mutated or not) , MOFA2's
+Bernoulli likelihood expects binary input like this.
+
+```{r mut-binary-matrix}
+library(reshape2)
+
+top_genes_mut <- names(sort(table(mut_data$Hugo_Symbol), decreasing = TRUE))[1:100]
+mut_simple    <- mut_data[mut_data$Hugo_Symbol %in% top_genes_mut,
+                           c("Tumor_Sample_Barcode", "Hugo_Symbol")]
+
+mut_matrix <- reshape2::dcast(
+  mut_simple,
+  Hugo_Symbol ~ Tumor_Sample_Barcode,
+  fun.aggregate = function(x) as.integer(length(x) > 0),
+  fill = 0
+)
+rownames(mut_matrix) <- mut_matrix$Hugo_Symbol
+mut_matrix <- as.matrix(mut_matrix[, -1])
+
+cat("mutation matrix dimensions:", dim(mut_matrix), "\n")
+```
+
+### Lining up patients across layers
+
+MOFA2 needs the same patients, in the same column order, in every matrix.
+Match on the first 12 characters of the TCGA barcode (that's the patient
+ID - the rest is sample/portion/plate info) and keep only patients present
+in all three layers.
+
+```{r align-patients-initial}
+rna_patients  <- substr(colnames(rna_norm),   1, 12)
+meth_patients <- substr(colnames(meth_M),     1, 12)
+mut_patients  <- substr(colnames(mut_matrix), 1, 12)
+
+common_patients <- Reduce(intersect, list(rna_patients, meth_patients, mut_patients))
+cat("patients present in all three layers:", length(common_patients), "\n")
+
+rna_final  <- rna_norm[,   match(common_patients, rna_patients)]
+meth_final <- meth_M[,     match(common_patients, meth_patients)]
+mut_final  <- mut_matrix[, match(common_patients, mut_patients)]
+
+# use plain patient IDs as column names now that everything lines up
+colnames(rna_final) <- colnames(meth_final) <- colnames(mut_final) <- common_patients
+
+# mutations aren't touched by ComBat, so this version is already final
+saveRDS(mut_final, file.path(data_dir, "mut_final.rds"))
+```
+
+## Exploratory QC plots
+
+Before integration: check for batch effects in RNA/methylation (PCA by
+tissue source site), look at the mutation landscape, and see how the
+samples separate on UMAP.
+
+### Batch effect check - RNA PCA
+
+PCA on the most variable genes, colored by tissue source site (TSS) - if
+samples cluster by TSS rather than biology, that's a batch effect we need
+to correct before integration.
+
+```{r pca-rna-batch}
+# TSS = tissue source site, positions 6-7 of the TCGA barcode, stands in for batch
+tss <- substr(colnames(rna_final), 6, 7)
+cat("TSS codes in RNA data:\n")
+print(table(tss))
+
+top_var <- order(apply(rna_final, 1, var), decreasing = TRUE)[1:500]
+pca     <- prcomp(t(rna_final[top_var, ]), scale. = TRUE)
+
+df <- data.frame(
+  PC1   = pca$x[, 1],
+  PC2   = pca$x[, 2],
+  batch = tss
+)
+
+p <- ggplot(df, aes(PC1, PC2, color = batch)) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "RNA-seq PCA - colored by TSS")
+p
+ggsave(file.path(fig_dir, "rna_pca_batch.png"), p, width = 7, height = 5)
+```
+
+### Batch effect check - methylation PCA
+
+Same check on methylation, using the most variable CpG probes instead of
+genes.
+
+```{r pca-meth-batch}
+tss_meth <- substr(colnames(meth_final), 6, 7)
+
+top_cpg <- order(apply(meth_final, 1, var), decreasing = TRUE)[1:10000]
+pca_m   <- prcomp(t(meth_final[top_cpg, ]), scale. = TRUE)
+
+df_m <- data.frame(
+  PC1   = pca_m$x[, 1],
+  PC2   = pca_m$x[, 2],
+  batch = tss_meth
+)
+
+p <- ggplot(df_m, aes(PC1, PC2, color = batch)) +
+  geom_point(alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Methylation PCA by batch (TSS)")
+p
+ggsave(file.path(fig_dir, "meth_pca_batch.png"), p, width = 7, height = 5)
+```
+
+The PCA plots above are a visual check - this turns it into a number by
+regressing each principal component on TSS and looking at the R2, so we
+have something concrete to compare before vs. after correction.
+
+```{r batch-quantitative}
+# how much of PC1/PC2 does batch explain, R2 from a simple lm
+tss_rna  <- substr(colnames(rna_norm), 6, 7)
+pca_rna  <- prcomp(t(rna_norm[order(apply(rna_norm, 1, var),
+                                     decreasing=TRUE)[1:500], ]), scale.=TRUE)
+r2_rna_pc1 <- summary(lm(pca_rna$x[,1] ~ factor(tss_rna)))$r.squared
+r2_rna_pc2 <- summary(lm(pca_rna$x[,2] ~ factor(tss_rna)))$r.squared
+
+tss_meth <- substr(colnames(meth_M), 6, 7)
+pca_meth <- prcomp(t(meth_M[order(apply(meth_M, 1, var),
+                                    decreasing=TRUE)[1:1000], ]), scale.=TRUE)
+r2_meth_pc1 <- summary(lm(pca_meth$x[,1] ~ factor(tss_meth)))$r.squared
+r2_meth_pc2 <- summary(lm(pca_meth$x[,2] ~ factor(tss_meth)))$r.squared
+
+batch_df <- data.frame(
+  Layer = c("RNA", "RNA", "Methylation", "Methylation"),
+  PC    = c("PC1", "PC2", "PC1", "PC2"),
+  R2    = round(c(r2_rna_pc1, r2_rna_pc2, r2_meth_pc1, r2_meth_pc2), 3)
+)
+print(batch_df)
+cat("\nrule of thumb: R2 < 0.10 negligible, 0.10-0.30 moderate, > 0.30 strong batch effect\n")
+```
+
+R2 above 0.1 is enough to justify correcting for it, so run ComBat on both
+RNA and methylation, then rebuild the patient-aligned matrices from the
+corrected data - these are the final versions that get saved and used
+from here on.
+
+```{r combat-correction}
+library(sva)
+
+# correct RNA for TSS batch, overwrite rna_norm
+batch_rna <- substr(colnames(rna_norm), 6, 7)
+rna_norm  <- ComBat(dat = rna_norm, batch = batch_rna,
+                    mod = NULL, par.prior = TRUE)
+cat("RNA ComBat done:", dim(rna_norm), "\n")
+
+# same for methylation
+batch_meth <- substr(colnames(meth_M), 6, 7)
+meth_M     <- ComBat(dat = meth_M, batch = batch_meth,
+                     mod = NULL, par.prior = TRUE)
+cat("methylation ComBat done:", dim(meth_M), "\n")
+
+# rebuild the aligned matrices from the corrected data and save the final versions
+rna_final  <- rna_norm[, match(common_patients, substr(colnames(rna_norm), 1, 12))]
+meth_final <- meth_M[,   match(common_patients, substr(colnames(meth_M),   1, 12))]
+colnames(rna_final)  <- common_patients
+colnames(meth_final) <- common_patients
+
+saveRDS(rna_final,  file.path(data_dir, "rna_final.rds"))
+saveRDS(meth_final, file.path(data_dir, "meth_final.rds"))
+```
+
+Recheck the same R2 metric after correction, for RNA first.
+
+```{r rna-batcheffect}
+# recheck batch effect after ComBat - should be much lower
+tss_rna <- substr(colnames(rna_norm), 6, 7)
+pca_rna <- prcomp(t(rna_norm[order(apply(rna_norm, 1, var),
+                                    decreasing=TRUE)[1:500], ]), scale.=TRUE)
+r2_pc1 <- summary(lm(pca_rna$x[,1] ~ factor(tss_rna)))$r.squared
+r2_pc2 <- summary(lm(pca_rna$x[,2] ~ factor(tss_rna)))$r.squared
+
+cat("RNA after ComBat:\n")
+cat("R2 PC1:", round(r2_pc1, 3), "\n")
+cat("R2 PC2:", round(r2_pc2, 3), "\n")
+cat("\nbefore ComBat: PC1=0.235, PC2=0.166\n")
+```
+
+Same check for methylation.
+
+```{r batch-after-combat-meth}
+tss_meth <- substr(colnames(meth_M), 6, 7)
+pca_meth <- prcomp(t(meth_M[order(apply(meth_M, 1, var),
+                                    decreasing=TRUE)[1:1000], ]), scale.=TRUE)
+r2_meth_pc1 <- summary(lm(pca_meth$x[,1] ~ factor(tss_meth)))$r.squared
+r2_meth_pc2 <- summary(lm(pca_meth$x[,2] ~ factor(tss_meth)))$r.squared
+
+cat("methylation after ComBat:\n")
+cat("R2 PC1:", round(r2_meth_pc1, 3), "\n")
+cat("R2 PC2:", round(r2_meth_pc2, 3), "\n")
+cat("\nbefore ComBat: PC1=0.167, PC2=0.118\n")
+```
+
+Build a simple binary survival label (died within 3 years vs. survived
+past 3 years) purely for coloring the UMAP plots below - the Cox model
+later on uses actual time-to-event data, not this label.
+
+```{r clinical-labels}
+clin_final <- readRDS(file.path(data_dir, "clinical.rds"))
+
+# binary 3-year survival label, only used for EDA/UMAP coloring
+# the Cox model later on does not use this label but yes, we will run binary model as well 
+clin_final$label <- NA
+clin_final$label[clin_final$vital_status == "Dead" &
+                 clin_final$days_to_death <= 1095] <- 0
+clin_final$label[clin_final$days_to_last_follow_up > 1095] <- 1
+
+saveRDS(clin_final, file.path(data_dir, "clin_final.rds"))
+cat("label distribution (0=died<3yr, 1=survived>3yr):\n")
+print(table(clin_final$label, useNA = "always"))
+```
+
+### UMAP - RNA-seq colored by survival label
+
+UMAP on the most variable genes (post-ComBat), colored by the survival
+label - a quick look at whether survival separates out in the RNA data
+even before running MOFA2.
+
+```{r umap-rna}
+library(umap)
+label_lookup <- setNames(clin_final$label, clin_final$submitter_id)
+top_var      <- order(apply(rna_final, 1, var), decreasing = TRUE)[1:2000]
+um_rna       <- umap(t(rna_final[top_var, ]))
+
+p <- ggplot(data.frame(
+    UMAP1    = um_rna$layout[,1],
+    UMAP2    = um_rna$layout[,2],
+    survival = label_lookup[substr(colnames(rna_final), 1, 12)]),
+  aes(UMAP1, UMAP2, color = factor(survival))) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  scale_color_manual(values   = c("0" = "#C0392B", "1" = "#2E4A7A"),
+                     labels   = c("0" = "Did not survive", "1" = "Survived"),
+                     na.value = "grey80") +
+  theme_minimal() +
+  labs(title = "RNA-seq UMAP - survival label", color = "Survival")
+p
+ggsave(file.path(fig_dir, "umap_rna_survival.png"), p, width = 7, height = 5)
+```
+
+### UMAP - methylation colored by survival label
+
+Same check on the methylation layer.
+
+```{r umap-meth}
+top_cpg  <- order(apply(meth_final, 1, var), decreasing = TRUE)[1:1000]
+um_meth  <- umap(t(meth_final[top_cpg, ]))
+
+p <- ggplot(data.frame(
+    UMAP1    = um_meth$layout[, 1],
+    UMAP2    = um_meth$layout[, 2],
+    survival = label_lookup[substr(colnames(meth_final), 1, 12)]),
+  aes(UMAP1, UMAP2, color = factor(survival))) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  scale_color_manual(values = c("0" = "#C0392B", "1" = "#2E4A7A"),
+                     labels = c("0" = "Did not survive", "1" = "Survived"),
+                     na.value = "grey80") +
+  theme_minimal() +
+  labs(title = "Methylation UMAP - survival label", color = "Survival")
+p
+ggsave(file.path(fig_dir, "umap_meth_survival.png"), p, width = 7, height = 5)
+```
+
+### OncoPrint - top 20 mutated genes
+
+Standard mutation landscape plot - which genes are hit, how often, and
+whether patients share the same mutations or not.
+
+```{r oncoprint}
+library(maftools)
+
+maf_obj <- read.maf(maf = mut_data)
+
+grDevices::png(file.path(fig_dir, "oncoprint.png"), width = 1400, height = 900, res = 120)
+oncoplot(maf = maf_obj, top = 20, fontSize = 12)
+title("Top 20 mutated genes - CRC cohort")
+grDevices::dev.off()
+
+# also show it inline in the knitted report
+oncoplot(maf = maf_obj, top = 20)
+```
+
+### Tumor mutation burden (TMB) distribution
+
+Total mutation count per patient, on a log scale - CRC typically shows a
+bimodal split.
+
+```{r tmb-histogram}
+# TMB is bimodal in CRC 
+tmb <- maf_obj@variants.per.sample
+
+p <- ggplot(tmb, aes(x = Variants)) +
+  geom_histogram(bins = 50, fill = "#2E4A7A", color = "white", alpha = 0.8) +
+  scale_x_log10() +
+  theme_minimal() +
+  labs(
+    title = "Tumor Mutation Burden - CRC cohort",
+    x     = "Number of mutations per patient (log scale)",
+    y     = "Number of patients"
+  )
+p
+ggsave(file.path(fig_dir, "tmb_histogram.png"), p, width = 7, height = 5)
+```
+
+## Cross-modal patient alignment
+
+Take the patients present in all three omics layers and confirm the column
+order matches across matrices and MOFA2 needs that for the next step.
+
+```{r align-patients}
+cat("RNA final:  ", dim(rna_final),  "\n")
+cat("meth final: ", dim(meth_final), "\n")
+cat("mut final:  ", dim(mut_final),  "\n")
+
+cat("RNA vs meth aligned:", all(colnames(rna_final) == colnames(meth_final)), "\n")
+cat("RNA vs mut aligned: ", all(colnames(rna_final) == colnames(mut_final)),  "\n")
+```

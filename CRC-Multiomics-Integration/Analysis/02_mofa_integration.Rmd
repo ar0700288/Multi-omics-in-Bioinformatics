@@ -1,0 +1,290 @@
+---
+title: "Mofa_Integration"
+author: "Ali Raza, Pritom, niloufer"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+---
+
+MOFA2 multi-omics integration and molecular subtyping. Picks up the aligned
+RNA/methylation/mutation matrices from 01_QC_EDA.Rmd, learns 15 latent
+factors, then clusters patients on those factors to get candidate subtypes.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+data_dir <- "../data"
+out_dir  <- "../Outputs"
+fig_dir  <- file.path(out_dir, "02_mofa_integration")   # this file's plots go here
+dir.create(data_dir, showWarnings = FALSE)
+dir.create(out_dir,  showWarnings = FALSE)
+dir.create(fig_dir,  showWarnings = FALSE)
+
+library(MOFA2)
+library(ggplot2)
+library(dplyr)
+
+# the aligned, analysis-ready layers built in 01_QC_EDA.Rmd
+
+rna_final  <- readRDS(file.path(data_dir, "rna_final.rds"))
+meth_final <- readRDS(file.path(data_dir, "meth_final.rds"))
+mut_final  <- readRDS(file.path(data_dir, "mut_final.rds"))
+clin_final <- readRDS(file.path(data_dir, "clin_final.rds"))
+
+
+cat("data loaded\n")
+```
+
+## MOFA2 setup
+
+MOFA2 (Multi-Omics Factor Analysis) learns a shared latent factor space
+across the three omics layers - each factor picks up variation that shows
+up consistently across modalities, which is what makes it more informative
+than looking at RNA, methylation or mutations on their own. We use the top
+5,000 variable features for RNA and methylation, all 100 mutation genes,
+15 factors, and a Gaussian/Gaussian/Bernoulli likelihood setup matching the
+continuous vs. binary nature of each layer.
+
+```{r mofa-input}
+# most signal lives in the high-variance features, so subset down to those
+top_rna_idx  <- order(apply(rna_final,  1, var), decreasing = TRUE)[1:5000]
+top_meth_idx <- order(apply(meth_final, 1, var), decreasing = TRUE)[1:5000]
+
+# MOFA2 wants one matrix per view, features x samples
+data_mofa <- list(
+  RNA         = rna_final[top_rna_idx,  ],
+  Methylation = meth_final[top_meth_idx, ],
+  Mutations   = mut_final
+)
+
+cat("MOFA2 input ready:\n")
+cat("RNA:        ", dim(data_mofa$RNA),         "\n")
+cat("Methylation:", dim(data_mofa$Methylation), "\n")
+cat("Mutations:  ", dim(data_mofa$Mutations),   "\n")
+
+mofa <- create_mofa(data_mofa)
+print(mofa)
+```
+
+Set the number of factors and the per-view likelihood, then hand it off to
+`prepare_mofa()` which does some internal bookkeeping before training can
+start.
+
+```{r mofa-options}
+model_opts             <- get_default_model_options(mofa)
+model_opts$num_factors <- 15
+model_opts$likelihoods <- c(RNA         = "gaussian",
+                             Methylation = "gaussian",
+                             Mutations   = "bernoulli")
+
+train_opts      <- get_default_training_options(mofa)
+train_opts$seed <- 42
+
+mofa <- prepare_mofa(mofa,
+                     model_options    = model_opts,
+                     training_options = train_opts)
+cat("MOFA2 ready to train\n")
+```
+
+Actual training happens here - this is the slow, one-time step, so it's
+switched off by default and only needs flipping to `eval=TRUE` once.
+
+```{r mofa-run, eval=FALSE}
+# takes 10-30 minutes, only needs to run once - eval=FALSE keeps it off
+# during normal knits, flip to TRUE to (re)train
+mofa <- run_mofa(mofa, use_basilisk = TRUE)
+saveRDS(mofa, file.path(data_dir, "mofa_model.rds"))
+cat("MOFA2 trained and saved\n")
+```
+
+Every other run just reloads the already-trained model from disk instead
+of retraining.
+
+```{r mofa-reload}
+# training already happened above (or in a previous run) - just reload it
+mofa <- readRDS(file.path(data_dir, "mofa_model.rds"))
+```
+
+## Variance explained per factor
+
+Factors that explain variance in more than one layer are the ones that
+actually reflect shared multi-omics signal, rather than noise specific to
+one layer.
+
+```{r mofa-variance}
+p1 <- plot_variance_explained(mofa, max_r2 = 15)
+p1
+ggsave(file.path(fig_dir, "variance_explained_per_factor.png"), p1, width = 8, height = 6)
+
+# total variance captured per layer
+p2 <- plot_variance_explained(mofa, plot_total = TRUE)[[2]]
+p2
+ggsave(file.path(fig_dir, "variance_explained_total.png"), p2, width = 6, height = 5)
+```
+
+Pull the actual factor scores (one value per patient per factor) out of
+the trained model - this patient x factor matrix is what the rest of the
+pipeline (clustering, survival) actually works with.
+
+```{r extract-factors}
+factors <- get_factors(mofa, factors = "all")[[1]]
+cat("factor matrix dimensions:", dim(factors), "\n")
+```
+
+## Molecular subtyping
+
+k-means on the factor matrix, with k chosen by silhouette score rather than
+picked arbitrarily.
+
+```{r silhouette-scores}
+library(cluster)
+
+sil_scores <- sapply(2:6, function(k) {
+  set.seed(42)
+  km <- kmeans(factors, centers = k, nstart = 25)
+  mean(silhouette(km$cluster, dist(factors))[, 3])
+})
+
+best_k <- (2:6)[which.max(sil_scores)]
+cat("best k:", best_k, "\n")
+
+sil_df <- data.frame(k = 2:6, silhouette = sil_scores)
+p <- ggplot(sil_df, aes(k, silhouette)) +
+  geom_line(color = "#2E4A7A") +
+  geom_point(size = 3, color = "#2E4A7A") +
+  geom_vline(xintercept = best_k, linetype = "dashed", color = "#C0392B") +
+  theme_minimal() +
+  labs(title = "Silhouette Score by Number of Clusters",
+       x = "Number of clusters (k)", y = "Mean silhouette width")
+p
+ggsave(file.path(fig_dir, "silhouette_scores.png"), p, width = 7, height = 5)
+```
+
+Refit k-means at the best k from above to get the actual subtype labels.
+
+```{r kmeans-final}
+set.seed(42)
+
+km_final       <- kmeans(factors, centers = best_k, nstart = 25)
+subtype_labels <- km_final$cluster
+
+cat("subtype distribution:\n")
+print(table(subtype_labels))
+```
+
+Visualize the subtypes on a UMAP of the factor matrix, to see whether the
+k-means clusters correspond to visually distinct groups.
+
+```{r umap-subtypes}
+library(umap)
+
+umap_out <- umap(factors)
+df_umap  <- data.frame(
+  UMAP1   = umap_out$layout[, 1],
+  UMAP2   = umap_out$layout[, 2],
+  Subtype = factor(subtype_labels)
+)
+
+p <- ggplot(df_umap, aes(UMAP1, UMAP2, color = Subtype)) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Molecular Subtypes - UMAP of MOFA2 Factors",
+       color = "Subtype")
+p
+ggsave(file.path(fig_dir, "umap_subtypes.png"), p, width = 7, height = 5)
+```
+
+## Survival association per MOFA2 factor
+
+Split each factor at its median (high vs low) and run a log-rank test
+against overall survival - a quick way to screen all 15 factors before
+committing to the ones that actually track survival.
+
+```{r factor-survival}
+library(survival)
+
+clin_m <- clin_final[match(substr(rownames(factors), 1, 12),
+                            clin_final$submitter_id), ]
+time   <- ifelse(clin_m$vital_status == "Dead",
+                 clin_m$days_to_death, clin_m$days_to_last_follow_up)
+event  <- ifelse(clin_m$vital_status == "Dead", 1, 0)
+
+pval_df <- data.frame(
+  Factor  = paste0("Factor", 1:15),
+  p_value = sapply(1:15, function(i) {
+    d  <- data.frame(time, event, g = ifelse(factors[,i] > median(factors[,i]), "High", "Low"))
+    d  <- d[!is.na(d$time) & d$time > 0, ]
+    lr <- tryCatch(survdiff(Surv(time, event) ~ g, data = d), error = function(e) NULL)
+    if (is.null(lr)) return(NA)
+    1 - pchisq(lr$chisq, df = 1)
+  })
+) |> arrange(p_value)
+
+print(pval_df)
+
+p <- ggplot(pval_df, aes(x = reorder(Factor, p_value), y = p_value)) +
+  geom_bar(stat = "identity", fill = "#2E4A7A", alpha = 0.8) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "#C0392B") +
+  coord_flip() + theme_minimal() +
+  labs(title = "Survival Association per MOFA2 Factor",
+       x = "Factor", y = "Log-rank p-value") +
+  annotate("text", x = 1, y = 0.06, label = "p = 0.05", color = "#C0392B", size = 3)
+p
+ggsave(file.path(fig_dir, "factor_survival_pvalues.png"), p, width = 7, height = 6)
+```
+
+## Factor weight inspection
+
+Factor 12 and Factor 6 are the ones that turn out to matter for survival
+(next section) - look at which genes and mutations actually drive them
+before using them further.
+
+```{r check-weights}
+# quick look at which features drive the two factors we care about later
+weights_f12_rna <- get_weights(mofa, views = "RNA",       factors = 12)[[1]]
+weights_f12_mut <- get_weights(mofa, views = "Mutations", factors = 12)[[1]]
+weights_f6_rna  <- get_weights(mofa, views = "RNA",       factors = 6)[[1]]
+
+cat("Factor 12 RNA - top 10 weights:\n")
+print(round(sort(abs(weights_f12_rna[,1]), decreasing=TRUE)[1:10], 4))
+
+cat("\nFactor 12 Mutations - top 10 weights:\n")
+print(round(sort(abs(weights_f12_mut[,1]), decreasing=TRUE)[1:10], 4))
+
+cat("\nFactor 6 RNA - top 10 weights:\n")
+print(round(sort(abs(weights_f6_rna[,1]), decreasing=TRUE)[1:10], 4))
+```
+
+## Export ML feature matrix (Factor 6 & 12 top genes)
+
+Factors 6 and 12 are carried into the survival analysis next - pull their
+top genes and build the feature matrix the Cox model will use.
+
+```{r export-ml-features}
+get_top <- function(factor_num, n = 25) {
+  w <- get_weights(mofa, views = "RNA", factors = factor_num)[[1]]
+  data.frame(gene = rownames(w), weight = w[,1]) |>
+    arrange(desc(abs(weight))) |> head(n)
+}
+
+top_genes <- rbind(get_top(12), get_top(6)) |>
+             distinct(gene, .keep_all = TRUE)
+
+cat("total unique genes:", nrow(top_genes), "\n")
+
+# keep only patients that also have clinical data, then build the feature matrix
+common_pts <- intersect(substr(colnames(rna_final), 1, 12), clin_final$submitter_id)
+rna_sub    <- rna_final[rownames(rna_final) %in% top_genes$gene,
+                         substr(colnames(rna_final), 1, 12) %in% common_pts]
+
+ml_df           <- as.data.frame(t(rna_sub))
+colnames(ml_df) <- make.names(colnames(ml_df))
+
+cat("patients:", nrow(ml_df), "| features:", ncol(ml_df), "\n")
+write.csv(ml_df, file.path(data_dir, "top_extracted50_genes.csv"), row.names = TRUE)
+cat("saved\n")
+```

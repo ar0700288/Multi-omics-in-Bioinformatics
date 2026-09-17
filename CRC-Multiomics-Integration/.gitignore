@@ -1,0 +1,36 @@
+# ── Large data files (exceed GitHub 100MB limit) ──
+*.rds
+*.RData
+.RDataTmp
+.Rhistory
+
+# small, standalone-useful artifacts other notebooks depend on directly -
+# keep these even though they're .rds (each lets you skip an expensive step)
+!data/mofa_model.rds
+!data/cox_fit.rds
+!data/sc_small.rds
+!data/clin_final.rds
+!data/clinical.rds
+
+# ── Raw downloaded data folders ──
+GDCdata/
+GSE132465/
+MANIFEST
+
+# ── Temporary R files ──
+*.tmp
+*.log
+*_cache/
+*_files/
+*.knit.md
+
+# ── Python build artifacts ──
+__pycache__/
+*.pyc
+
+# ── System files ──
+.DS_Store
+Thumbs.db
+
+# ── HTML outputs (generated from Rmd) ──
+*.html
