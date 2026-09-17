@@ -140,7 +140,7 @@ types. Inside microglia the links are driven largely by *APOE*.
 
 ```bash
 git clone https://github.com/ar0700288/Multi-omics-in-Bioinformatics.git
-cd Multi-omics-in-Bioinformatics/AD-glial-states-genetic-risk
+cd Multi-omics-in-Bioinformatics/AD-glial-states-genetic-risk-Project-02
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
 python run_pipeline.py
