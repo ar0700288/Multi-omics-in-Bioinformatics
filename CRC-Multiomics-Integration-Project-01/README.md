@@ -163,3 +163,7 @@ The two Python scripts (05, 06) need `data/top_extracted50_genes.csv`
    (2020).
 4. Johnson WE, et al. Adjusting batch effects in microarray expression data
    using empirical Bayes methods. Biostatistics, 8, 118-127 (2007).
+
+## License
+
+The code in this project is released under the [MIT License](LICENSE). The TCGA and single-cell datasets keep their own terms of use.
