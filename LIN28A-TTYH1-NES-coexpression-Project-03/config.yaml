@@ -1,0 +1,28 @@
+genes_of_interest: [LIN28A, TTYH1, NES]
+
+braun:
+  # Braun et al. 2023, Science, doi:10.1126/science.adf1226
+  # h5ad linked from https://github.com/linnarsson-lab/developing-human-brain
+  url: "https://www.dropbox.com/scl/fi/itw9nyjd16xgi0egmhjh7/human_dev.h5ad?rlkey=hp5z48c3k68445tvpvp3m9xlq&dl=1"
+  file: data/raw/braun2023_human_dev.h5ad
+  donor_col: donor_id
+  age_col: Age
+  class_col: CellClass
+  chemistry_col: Chemistry
+  symbol_col: Gene
+
+chunk_size: 20000          # cells read from the matrix at a time; lower it if memory is tight
+min_cells: 50              # smallest group of cells used for a donor-level value or pseudobulk sample
+
+age_bins:                  # weeks post-conception, (lower, upper]
+  edges: [4.9, 7.0, 9.5, 14.0]
+  labels: [early, mid, late]
+
+population:
+  chemistry: v3            # clusters are ranked on v3 cells only
+  min_cells: 500           # smallest cluster considered
+  fold: 5                  # triple-positive share >= 5x the dataset-wide share
+
+markers:
+  padj: 0.05
+  min_log2fc: 1

@@ -1,0 +1,23 @@
+name: bif01
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - anndata
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - h5py
+  - pyyaml
+  - requests
+  - snakemake-minimal=7.32
+  - ipykernel              # runs the notebooks (also in VS Code or Jupyter)
+  - nbconvert              # lets Snakemake execute the notebooks
+  - pulp<2.8               # snakemake 7 breaks with pulp >= 2.8
+  - pip
+  - pip:
+      - pydeseq2==0.5.2
+# After a full successful run: conda env export > environment.lock.yml

@@ -1,0 +1,75 @@
+# Single entry point for the whole analysis.
+# Run everything from the repository folder:  snakemake --cores 1
+# Each step is a notebook in notebooks/. Snakemake runs it from top to bottom and saves it in place, so
+# after a run every notebook also shows its printed output and figures.
+# Snakemake runs a step only when its output is missing or older than its input, so a second run
+# after a finished one does nothing. Use  snakemake --cores 1 --forceall  to redo every step.
+
+configfile: "config.yaml"
+
+H5AD = config["braun"]["file"]
+FIG = "results/figures/"
+# Execute a notebook and store the outputs in it; no time limit per cell (the matrix passes are long)
+RUN = "jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 notebooks/"
+
+
+# The final outputs; asking for these makes Snakemake run every step below in the right order
+rule all:
+    input:
+        FIG + "02_qc_batch.png",
+        FIG + "03_data_overview.png",
+        FIG + "04_gene_detection.png",
+        FIG + "05_embedding.png",
+        "results/tables/markers_both.csv",
+
+
+# Step 1: 12 GB dataset from the authors' link
+rule download:
+    output: H5AD
+    shell: RUN + "01_download.ipynb"
+
+
+# Step 2: missing values and the 10x kit batch effect
+rule qc:
+    input: H5AD
+    output: FIG + "02_qc_batch.png"
+    shell: RUN + "02_qc.ipynb"
+
+
+# Step 3: raw-count check and cells, donors and kit per week
+rule data_overview:
+    input: H5AD
+    output: FIG + "03_data_overview.png"
+    shell: RUN + "03_data_overview.ipynb"
+
+
+# Step 4: counts of LIN28A, TTYH1 and NES for every cell (input of step 5)
+rule gene_detection:
+    input: H5AD
+    output: "data/processed/gene_counts.csv.gz", FIG + "04_gene_detection.png"
+    shell: RUN + "04_gene_detection.ipynb"
+
+
+# Step 5, question 1: co-expression and the population clusters (input of step 6)
+rule coexpression:
+    input: "data/processed/gene_counts.csv.gz"
+    output:
+        "data/processed/population_clusters.txt",
+        FIG + "05_coexpression_by_class.png", FIG + "05_population_clusters.png", FIG + "05_embedding.png"
+    shell: RUN + "05_coexpression.ipynb"
+
+
+# Step 6: pseudobulk samples per state, donor and kit (input of step 7)
+rule pseudobulk:
+    input: "data/processed/population_clusters.txt"
+    output: "data/processed/pseudobulk.npz"
+    shell: RUN + "06_pseudobulk.ipynb"
+
+
+# Step 7, question 2: DESeq2 marker tables on the cell-type and stage axes
+rule markers:
+    input: "data/processed/pseudobulk.npz"
+    output:
+        "results/tables/markers_celltype.csv", "results/tables/markers_stage.csv",
+        "results/tables/markers_both.csv", FIG + "07_volcano.png", FIG + "07_markers_both_axes.png"
+    shell: RUN + "07_markers.ipynb"
