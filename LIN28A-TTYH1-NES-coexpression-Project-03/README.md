@@ -57,7 +57,6 @@ notebooks/01_ to 07_   one notebook per step, one cell per section
 src/common.py          shared paths, helpers and plot style, imported by every notebook
 results/figures/       PNG figures
 results/tables/        ranked marker tables
-docs/decision_log.md   analytical decisions and the alternatives considered
 ```
 
 ## Methods
