@@ -3,7 +3,9 @@
 # Each step is a notebook in notebooks/. Snakemake runs it from top to bottom and saves it in place, so
 # after a run every notebook also shows its printed output and figures.
 # Snakemake runs a step only when its output is missing or older than its input, so a second run
-# after a finished one does nothing. Use  snakemake --cores 1 --forceall  to redo every step.
+# after a finished one does nothing. To redo every analysis step without downloading the data again:
+#   snakemake --cores 1 --forcerun qc data_overview gene_detection coexpression pseudobulk markers
+# (--forceall would also delete and re-download the 12 GB data file)
 
 configfile: "config.yaml"
 

@@ -19,10 +19,18 @@ Take-home assignment, Gargiulo Lab (MDC Berlin).
 ## How to run
 
 ```bash
+git clone https://github.com/ar0700288/Multi-omics-in-Bioinformatics.git
+cd Multi-omics-in-Bioinformatics/LIN28A-TTYH1-NES-coexpression-Project-03
 conda env create -f environment.yml
 conda activate bif01
 snakemake --cores 1
 ```
+
+All commands run from the project folder. Needs about 16 GB of memory and 15 GB of free disk space
+(12 GB for the data). Notebook 01 downloads the data automatically. To rerun every analysis step
+without downloading the data again, use
+`snakemake --cores 1 --forcerun qc data_overview gene_detection coexpression pseudobulk markers`
+(`--forceall` would delete and re-download the 12 GB file).
 
 Each step is a Jupyter notebook in `notebooks/`, split into sections. Snakemake runs every notebook
 from top to bottom and saves it in place, so after a run each notebook also shows its printed output and
@@ -45,7 +53,7 @@ Figures go to `results/figures/`, marker tables to `results/tables/`. Intermedia
 `data/processed/` and are not committed.
 
 The analysis has no random steps (no subsampling, no random initialisation), so no seed is needed and
-a rerun gives the same numbers. Package versions are pinned in `environment.yml`.
+a rerun gives the same numbers. The main package versions used for the results are pinned in `environment.yml`.
 
 ## Repository layout
 
