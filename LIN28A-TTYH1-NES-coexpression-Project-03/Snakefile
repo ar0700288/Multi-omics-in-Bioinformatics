@@ -15,9 +15,13 @@ FIG = "results/figures/"
 RUN = "jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=-1 notebooks/"
 
 
-# The final outputs; asking for these makes Snakemake run every step below in the right order
+# The final outputs; asking for these makes Snakemake run every step below in the right order.
+# The data file and the intermediate files are listed too: the figures and tables are already in the
+# repository, so without them a fresh copy would look finished and nothing would run.
 rule all:
     input:
+        H5AD,
+        "data/processed/pseudobulk.npz",
         FIG + "02_qc_batch.png",
         FIG + "03_data_overview.png",
         FIG + "04_gene_detection.png",
