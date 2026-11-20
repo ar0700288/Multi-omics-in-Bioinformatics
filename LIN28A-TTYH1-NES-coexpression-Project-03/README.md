@@ -16,27 +16,82 @@ Take-home assignment, Gargiulo Lab (MDC Berlin).
 | Raw reads | EGA, EGAS00001004107 (controlled access, not used) |
 | Content | 1,665,937 cells, 59,459 genes, raw UMI counts, 26 donors, 5 to 14 weeks post-conception, 10x v2 and v3 |
 
-## How to run
+## How to reproduce the analysis
+
+### What you need
+
+- [Git](https://git-scm.com/downloads) and [Miniconda or Anaconda](https://docs.conda.io/en/latest/miniconda.html)
+- About 16 GB of memory and 15 GB of free disk space (12 GB is the dataset)
+- An internet connection: the first step downloads the data from the authors' link
+
+### Steps
+
+1. Open a terminal. On Windows use **Anaconda Prompt** from the Start menu; on macOS or Linux use
+   **Terminal**.
+2. Go to the folder where you want the project, for example your Desktop:
+
+   ```bash
+   cd Desktop
+   ```
+
+3. Download the repository and enter the project folder:
+
+   ```bash
+   git clone https://github.com/ar0700288/Multi-omics-in-Bioinformatics.git
+   cd Multi-omics-in-Bioinformatics/LIN28A-TTYH1-NES-coexpression-Project-03
+   ```
+
+4. Create and activate the environment (a few minutes):
+
+   ```bash
+   conda env create -f environment.yml
+   conda activate bif01
+   ```
+
+5. Run the whole pipeline:
+
+   ```bash
+   snakemake --cores 1
+   ```
+
+   This downloads the data and runs notebooks `01` to `07` in order. Depending on the machine and the
+   connection it takes one to a few hours, mostly for the download and for reading the count matrix.
+
+6. Check that the results match the ones in this repository:
+
+   ```bash
+   git status
+   ```
+
+   The notebooks show as changed, because they now hold the outputs of your run. If the files in
+   `results/tables/` are **not** listed as changed, the marker tables were reproduced exactly.
+   If they are listed, `git diff results/tables` shows the differences. Changes only in the last
+   decimal places come from small differences between package builds, not from the analysis.
+   Figures can also differ slightly in appearance.
+
+### Running it again
+
+All commands run from the project folder with the environment active (`conda activate bif01`).
+A second `snakemake --cores 1` does nothing, because everything is up to date. To rerun every analysis
+step without downloading the data again:
 
 ```bash
-git clone https://github.com/ar0700288/Multi-omics-in-Bioinformatics.git
-cd Multi-omics-in-Bioinformatics/LIN28A-TTYH1-NES-coexpression-Project-03
-conda env create -f environment.yml
-conda activate bif01
-snakemake --cores 1
+snakemake --cores 1 --forcerun qc data_overview gene_detection coexpression pseudobulk markers
 ```
 
-All commands run from the project folder. Needs about 16 GB of memory and 15 GB of free disk space
-(12 GB for the data). Notebook 01 downloads the data automatically. To rerun every analysis step
-without downloading the data again, use
-`snakemake --cores 1 --forcerun qc data_overview gene_detection coexpression pseudobulk markers`
-(`--forceall` would delete and re-download the 12 GB file).
+Do not use `--forceall`: it deletes the 12 GB data file and downloads it again.
+
+### Working step by step
+
+Instead of Snakemake you can open the notebooks in Jupyter or VS Code, choose the `bif01`
+environment as the kernel and run `01` to `07` in order.
+
+## Pipeline
 
 Each step is a Jupyter notebook in `notebooks/`, split into sections. Snakemake runs every notebook
 from top to bottom and saves it in place, so after a run each notebook also shows its printed output and
 figures. The notebooks in this repository already include detailed explanations of every cell and the
-outputs of the run of 13 November 2026. To work step by step instead, open the notebooks in Jupyter or VS Code and run `01` to `07` in
-order. The count matrix is never loaded whole. It is read in blocks of `chunk_size` cells (`config.yaml`), so
+outputs of the run of 13 November 2026. The count matrix is never loaded whole. It is read in blocks of `chunk_size` cells (`config.yaml`), so
 the pipeline runs on a 16 GB laptop.
 
 | Step | What it does | Output |
